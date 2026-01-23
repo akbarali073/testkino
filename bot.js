@@ -12,7 +12,7 @@ const mongoUri = process.env.MONGO_URI;
 const client = new MongoClient(mongoUri);
 
 let db, usersCollection, videosCollection, kanalsCollection;
-let adminId = [90740280];
+let adminId = [907402803];
 let channelUsername = "@panjara_ortida_prison_berk";
 let adminStep = {
   stage: null,
@@ -662,3 +662,4 @@ function startBot() {
     console.error("❌ Polling xatosi:", error);
   });
 }
+
