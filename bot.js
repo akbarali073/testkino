@@ -13,7 +13,6 @@ const client = new MongoClient(mongoUri);
 
 let db, usersCollection, videosCollection, kanalsCollection, groupsCollection;
 let adminId = [907402803];
-let channelUsername = "@panjara_ortida_prison_berk";
 let adminStep = {
   stage: null,
   video: null,
@@ -50,11 +49,6 @@ const connectMongo = async () => {
     kanalsCollection = db.collection("kanals");
     groupsCollection = db.collection("groups");
 
-    const kanal = await kanalsCollection.findOne({});
-    if (kanal) {
-      channelUsername = kanal.username;
-    }
-
     startBot();
   } catch (err) {
     console.error("❌ MongoDB ulanishda xatolik:", err);
@@ -66,10 +60,20 @@ connectMongo();
 // ===========================
 // YORDAMCHI FUNKSIYALAR
 // ===========================
-const isSubscribed = async (userId) => {
+const isChannelMember = async (userId) => {
   try {
-    const res = await bot.getChatMember(channelUsername, userId);
-    return ["member", "creator", "administrator"].includes(res.status);
+    const channels = await kanalsCollection.find({}).toArray();
+    for (const channel of channels) {
+      try {
+        const res = await bot.getChatMember(channel.username, userId);
+        if (!["member", "creator", "administrator"].includes(res.status)) {
+          return false;
+        }
+      } catch {
+        return false;
+      }
+    }
+    return true;
   } catch {
     return false;
   }
@@ -119,6 +123,7 @@ const adminKeyboard = {
   keyboard: [
     ["➕ Kino qo'shish", "📊 Statistikani ko'rish"],
     ["🔗 Kanal qo'shish", "🪓 Kanal o'chirish"],
+    ["📋 Kanallar ro'yxati"],
     ["👥 Admin qo'shish"],
     ["🏘 Guruh qo'shish", "🗑 Guruh o'chirish"],
     ["📋 Guruhlar ro'yxati"],
@@ -175,23 +180,21 @@ function startBot() {
 
       // Admin uchun obuna tekshirmaymiz
       if (!adminId.includes(user.id)) {
-        const subscribed = await isSubscribed(user.id);
-        if (!subscribed) {
+        const channelMember = await isChannelMember(user.id);
+        if (!channelMember) {
+          const channels = await kanalsCollection.find({}).toArray();
+          const buttons = channels.map((c) => [
+            { text: `📢 ${c.title || c.username}`, url: `https://t.me/${c.username.replace("@", "")}` },
+          ]);
+          buttons.push([{ text: "✅ Tekshirish", callback_data: "check_sub" }]);
+
           return bot.sendMessage(
             chatId,
             "*❌ Botdan foydalanish uchun kanallarga obuna bo'ling.*",
             {
               parse_mode: "Markdown",
               reply_markup: {
-                inline_keyboard: [
-                  [
-                    {
-                      text: "🔗 Obuna bo'lish",
-                      url: `https://t.me/${channelUsername.replace("@", "")}`,
-                    },
-                  ],
-                  [{ text: "✅ Tekshirish", callback_data: "check_sub" }],
-                ],
+                inline_keyboard: buttons,
               },
             },
           );
@@ -256,23 +259,21 @@ function startBot() {
 
     // OBUNA TEKSHIRISH (Faqat oddiy foydalanuvchilar uchun)
     if (!adminId.includes(user.id)) {
-      const subscribed = await isSubscribed(user.id);
-      if (!subscribed) {
+      const channelMember = await isChannelMember(user.id);
+      if (!channelMember) {
+        const channels = await kanalsCollection.find({}).toArray();
+        const buttons = channels.map((c) => [
+          { text: `📢 ${c.title || c.username}`, url: `https://t.me/${c.username.replace("@", "")}` },
+        ]);
+        buttons.push([{ text: "✅ Tekshirish", callback_data: "check_sub" }]);
+
         return bot.sendMessage(
           chatId,
-          "*⚠️ Botdan foydalanish uchun homiy kanalga obuna bo'lishingiz kerak.*",
+          "*⚠️ Botdan foydalanish uchun homiy kanallarga obuna bo'lishingiz kerak.*",
           {
             parse_mode: "Markdown",
             reply_markup: {
-              inline_keyboard: [
-                [
-                  {
-                    text: "🔗 Obuna bo'lish",
-                    url: `https://t.me/${channelUsername.replace("@", "")}`,
-                  },
-                ],
-                [{ text: "✅ Tekshirish", callback_data: "check_sub" }],
-              ],
+              inline_keyboard: buttons,
             },
           },
         );
@@ -377,15 +378,39 @@ function startBot() {
 
       // KANAL O'CHIRISH
       if (text === "🪓 Kanal o'chirish") {
-        await kanalsCollection.deleteMany({});
-        channelUsername = "@panjara_ortida_prison_berk";
-        return bot.sendMessage(
-          chatId,
-          "✅ Kanal o'chirildi va standart kanal qayta tiklandi.",
-          {
+        adminStep.stage = "deleting_channel";
+        const channels = await kanalsCollection.find({}).toArray();
+        if (channels.length === 0) {
+          return bot.sendMessage(chatId, "❌ Hozircha kanallar yo'q.", {
             reply_markup: adminKeyboard,
-          },
-        );
+          });
+        }
+        let message = "*🪓 O'chirmoqchi bo'lgan kanal username ni yuboring:*\n\n";
+        channels.forEach((c) => {
+          message += `📢 ${c.title || c.username}\n🆔 ${c.username}\n\n`;
+        });
+        return bot.sendMessage(chatId, message, {
+          parse_mode: "Markdown",
+          reply_markup: cancelKeyboard,
+        });
+      }
+
+      // KANALLAR RO'YXATI
+      if (text === "📋 Kanallar ro'yxati") {
+        const channels = await kanalsCollection.find({}).toArray();
+        if (channels.length === 0) {
+          return bot.sendMessage(chatId, "❌ Hozircha kanallar yo'q.", {
+            reply_markup: adminKeyboard,
+          });
+        }
+        let message = "*📋 Kanallar ro'yxati:*\n\n";
+        channels.forEach((c, index) => {
+          message += `${index + 1}. ${c.title || c.username}\n🆔 ${c.username}\n\n`;
+        });
+        return bot.sendMessage(chatId, message, {
+          parse_mode: "Markdown",
+          reply_markup: adminKeyboard,
+        });
       }
 
       // GURUH QO'SHISH
@@ -459,20 +484,45 @@ function startBot() {
         if (!text || !text.startsWith("@") || text.length < 2) {
           return bot.sendMessage(chatId, "❌ Noto'g'ri kanal username.");
         }
-        channelUsername = text.trim();
-        await kanalsCollection.updateOne(
-          { username: channelUsername },
-          { $set: { username: channelUsername } },
-          { upsert: true },
-        );
+        const channelUsername = text.trim();
+        try {
+          const chat = await bot.getChat(channelUsername);
+          await kanalsCollection.insertOne({
+            username: channelUsername,
+            title: chat.title,
+            addedAt: new Date().toISOString(),
+          });
+          adminStep.stage = null;
+          return bot.sendMessage(
+            chatId,
+            `✅ Kanal qo'shildi:\n📢 ${chat.title}\n🆔 ${channelUsername}`,
+            {
+              parse_mode: "Markdown",
+              reply_markup: adminKeyboard,
+            },
+          );
+        } catch (err) {
+          return bot.sendMessage(
+            chatId,
+            "❌ Kanalni qo'shishda xatolik. Kanal username to'g'riligini tekshiring.",
+          );
+        }
+      }
+
+      // KANAL O'CHIRISH
+      if (adminStep.stage === "deleting_channel") {
+        const channelUsername = text.trim();
+        const deleted = await kanalsCollection.deleteOne({ username: channelUsername });
         adminStep.stage = null;
-        return bot.sendMessage(
-          chatId,
-          `✅ Kanal qo'shildi: ${channelUsername}`,
-          {
+        if (deleted.deletedCount > 0) {
+          return bot.sendMessage(chatId, "✅ Kanal o'chirildi.", {
             reply_markup: adminKeyboard,
-          },
-        );
+          });
+        } else {
+          return bot.sendMessage(chatId, "❌ Kanal topilmadi.", {
+            reply_markup: adminKeyboard,
+          });
+        }
       }
 
       // GURUH ID QABUL QILISH
@@ -779,28 +829,26 @@ function startBot() {
     const chatId = query.message?.chat?.id || query.from.id;
 
     if (query.data === "check_sub") {
-      const subscribed = await isSubscribed(userId);
+      const channelMember = await isChannelMember(userId);
       await bot.answerCallbackQuery(query.id);
 
-      if (!subscribed) {
+      if (!channelMember) {
+        const channels = await kanalsCollection.find({}).toArray();
+        const buttons = channels.map((c) => [
+          { text: `📢 ${c.title || c.username}`, url: `https://t.me/${c.username.replace("@", "")}` },
+        ]);
+        buttons.push([{ text: "✅ Tekshirish", callback_data: "check_sub" }]);
+
         await bot
           .deleteMessage(chatId, query.message.message_id)
           .catch(() => {});
         return bot.sendMessage(
           chatId,
-          "*⚠️ Botdan foydalanish uchun homiy kanalga obuna bo'lishingiz kerak.*",
+          "*⚠️ Botdan foydalanish uchun homiy kanallarga obuna bo'lishingiz kerak.*",
           {
             parse_mode: "Markdown",
             reply_markup: {
-              inline_keyboard: [
-                [
-                  {
-                    text: "🔗 Obuna bo'lish",
-                    url: `https://t.me/${channelUsername.replace("@", "")}`,
-                  },
-                ],
-                [{ text: "✅ Tekshirish", callback_data: "check_sub" }],
-              ],
+              inline_keyboard: buttons,
             },
           },
         );
