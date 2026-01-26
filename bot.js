@@ -11,7 +11,7 @@ const bot = new TelegramBot(token, { polling: true });
 const mongoUri = process.env.MONGO_URI;
 const client = new MongoClient(mongoUri);
 
-let db, usersCollection, videosCollection, kanalsCollection;
+let db, usersCollection, videosCollection, kanalsCollection, groupsCollection;
 let adminId = [907402803];
 let channelUsername = "@panjara_ortida_prison_berk";
 let adminStep = {
@@ -48,6 +48,7 @@ const connectMongo = async () => {
     usersCollection = db.collection("users");
     videosCollection = db.collection("videos");
     kanalsCollection = db.collection("kanals");
+    groupsCollection = db.collection("groups");
 
     const kanal = await kanalsCollection.findOne({});
     if (kanal) {
@@ -69,6 +70,25 @@ const isSubscribed = async (userId) => {
   try {
     const res = await bot.getChatMember(channelUsername, userId);
     return ["member", "creator", "administrator"].includes(res.status);
+  } catch {
+    return false;
+  }
+};
+
+const isGroupMember = async (userId) => {
+  try {
+    const groups = await groupsCollection.find({}).toArray();
+    for (const group of groups) {
+      try {
+        const res = await bot.getChatMember(group.chatId, userId);
+        if (!["member", "creator", "administrator"].includes(res.status)) {
+          return false;
+        }
+      } catch {
+        return false;
+      }
+    }
+    return true;
   } catch {
     return false;
   }
@@ -100,6 +120,8 @@ const adminKeyboard = {
     ["➕ Kino qo'shish", "📊 Statistikani ko'rish"],
     ["🔗 Kanal qo'shish", "🪓 Kanal o'chirish"],
     ["👥 Admin qo'shish"],
+    ["🏘 Guruh qo'shish", "🗑 Guruh o'chirish"],
+    ["📋 Guruhlar ro'yxati"],
     ["📤 Habar yuborish", "✍️ Kino taxrirlash"],
   ],
   resize_keyboard: true,
@@ -174,6 +196,26 @@ function startBot() {
             },
           );
         }
+
+        const groupMember = await isGroupMember(user.id);
+        if (!groupMember) {
+          const groups = await groupsCollection.find({}).toArray();
+          const buttons = groups.map((g) => [
+            { text: `📱 ${g.title}`, url: g.inviteLink },
+          ]);
+          buttons.push([{ text: "✅ Tekshirish", callback_data: "check_sub" }]);
+
+          return bot.sendMessage(
+            chatId,
+            "*❌ Botdan foydalanish uchun guruhlarga a'zo bo'ling.*",
+            {
+              parse_mode: "Markdown",
+              reply_markup: {
+                inline_keyboard: buttons,
+              },
+            },
+          );
+        }
       }
 
       const found = await videosCollection.findOne({ code });
@@ -231,6 +273,26 @@ function startBot() {
                 ],
                 [{ text: "✅ Tekshirish", callback_data: "check_sub" }],
               ],
+            },
+          },
+        );
+      }
+
+      const groupMember = await isGroupMember(user.id);
+      if (!groupMember) {
+        const groups = await groupsCollection.find({}).toArray();
+        const buttons = groups.map((g) => [
+          { text: `📱 ${g.title}`, url: g.inviteLink },
+        ]);
+        buttons.push([{ text: "✅ Tekshirish", callback_data: "check_sub" }]);
+
+        return bot.sendMessage(
+          chatId,
+          "*⚠️ Botdan foydalanish uchun guruhlarga a'zo bo'lishingiz kerak.*",
+          {
+            parse_mode: "Markdown",
+            reply_markup: {
+              inline_keyboard: buttons,
             },
           },
         );
@@ -326,6 +388,56 @@ function startBot() {
         );
       }
 
+      // GURUH QO'SHISH
+      if (text === "🏘 Guruh qo'shish") {
+        adminStep.stage = "waiting_for_group_id";
+        return bot.sendMessage(
+          chatId,
+          "*🏘 Guruh qo'shish uchun guruh ID ni yuboring (masalan: -1001234567890):*",
+          {
+            parse_mode: "Markdown",
+            reply_markup: cancelKeyboard,
+          },
+        );
+      }
+
+      // GURUH O'CHIRISH
+      if (text === "🗑 Guruh o'chirish") {
+        adminStep.stage = "deleting_group";
+        const groups = await groupsCollection.find({}).toArray();
+        if (groups.length === 0) {
+          return bot.sendMessage(chatId, "❌ Hozircha guruhlar yo'q.", {
+            reply_markup: adminKeyboard,
+          });
+        }
+        let message = "*🗑 O'chirmoqchi bo'lgan guruh ID sini yuboring:*\n\n";
+        groups.forEach((g) => {
+          message += `📱 ${g.title}\n🆔 ${g.chatId}\n\n`;
+        });
+        return bot.sendMessage(chatId, message, {
+          parse_mode: "Markdown",
+          reply_markup: cancelKeyboard,
+        });
+      }
+
+      // GURUHLAR RO'YXATI
+      if (text === "📋 Guruhlar ro'yxati") {
+        const groups = await groupsCollection.find({}).toArray();
+        if (groups.length === 0) {
+          return bot.sendMessage(chatId, "❌ Hozircha guruhlar yo'q.", {
+            reply_markup: adminKeyboard,
+          });
+        }
+        let message = "*📋 Guruhlar ro'yxati:*\n\n";
+        groups.forEach((g, index) => {
+          message += `${index + 1}. ${g.title}\n🆔 ${g.chatId}\n🔗 ${g.inviteLink}\n\n`;
+        });
+        return bot.sendMessage(chatId, message, {
+          parse_mode: "Markdown",
+          reply_markup: adminKeyboard,
+        });
+      }
+
       // KINO TAXRIRLASH
       if (text === "✍️ Kino taxrirlash") {
         adminStep.stage = "editing_code";
@@ -361,6 +473,59 @@ function startBot() {
             reply_markup: adminKeyboard,
           },
         );
+      }
+
+      // GURUH ID QABUL QILISH
+      if (adminStep.stage === "waiting_for_group_id") {
+        const groupId = text.trim();
+        if (!groupId.startsWith("-100")) {
+          return bot.sendMessage(
+            chatId,
+            "❌ Noto'g'ri guruh ID. Guruh ID -100 bilan boshlanishi kerak.",
+          );
+        }
+        try {
+          const chat = await bot.getChat(groupId);
+          const inviteLink = await bot.exportChatInviteLink(groupId);
+          
+          await groupsCollection.insertOne({
+            chatId: groupId,
+            title: chat.title,
+            inviteLink: inviteLink,
+            addedAt: new Date().toISOString(),
+          });
+          
+          adminStep.stage = null;
+          return bot.sendMessage(
+            chatId,
+            `✅ Guruh qo'shildi:\n📱 ${chat.title}\n🆔 ${groupId}`,
+            {
+              parse_mode: "Markdown",
+              reply_markup: adminKeyboard,
+            },
+          );
+        } catch (err) {
+          return bot.sendMessage(
+            chatId,
+            "❌ Guruhni qo'shishda xatolik. Botni guruhga admin qiling va qayta urinib ko'ring.",
+          );
+        }
+      }
+
+      // GURUH O'CHIRISH
+      if (adminStep.stage === "deleting_group") {
+        const groupId = text.trim();
+        const deleted = await groupsCollection.deleteOne({ chatId: groupId });
+        adminStep.stage = null;
+        if (deleted.deletedCount > 0) {
+          return bot.sendMessage(chatId, "✅ Guruh o'chirildi.", {
+            reply_markup: adminKeyboard,
+          });
+        } else {
+          return bot.sendMessage(chatId, "❌ Guruh topilmadi.", {
+            reply_markup: adminKeyboard,
+          });
+        }
       }
 
       // ADMIN ID QABUL QILISH
@@ -617,19 +782,7 @@ function startBot() {
       const subscribed = await isSubscribed(userId);
       await bot.answerCallbackQuery(query.id);
 
-      if (subscribed) {
-        await saveUser(query.from);
-        await bot
-          .deleteMessage(chatId, query.message.message_id)
-          .catch(() => {});
-        return bot.sendMessage(
-          chatId,
-          "*✅ Obuna tasdiqlandi! Endi ko'rmoqchi bo'lgan film kodini yuboring.*",
-          {
-            parse_mode: "Markdown",
-          },
-        );
-      } else {
+      if (!subscribed) {
         await bot
           .deleteMessage(chatId, query.message.message_id)
           .catch(() => {});
@@ -652,6 +805,41 @@ function startBot() {
           },
         );
       }
+
+      const groupMember = await isGroupMember(userId);
+      if (!groupMember) {
+        const groups = await groupsCollection.find({}).toArray();
+        const buttons = groups.map((g) => [
+          { text: `📱 ${g.title}`, url: g.inviteLink },
+        ]);
+        buttons.push([{ text: "✅ Tekshirish", callback_data: "check_sub" }]);
+
+        await bot
+          .deleteMessage(chatId, query.message.message_id)
+          .catch(() => {});
+        return bot.sendMessage(
+          chatId,
+          "*⚠️ Botdan foydalanish uchun guruhlarga a'zo bo'lishingiz kerak.*",
+          {
+            parse_mode: "Markdown",
+            reply_markup: {
+              inline_keyboard: buttons,
+            },
+          },
+        );
+      }
+
+      await saveUser(query.from);
+      await bot
+        .deleteMessage(chatId, query.message.message_id)
+        .catch(() => {});
+      return bot.sendMessage(
+        chatId,
+        "*✅ Obuna tasdiqlandi! Endi ko'rmoqchi bo'lgan film kodini yuboring.*",
+        {
+          parse_mode: "Markdown",
+        },
+      );
     }
   });
 
@@ -662,4 +850,3 @@ function startBot() {
     console.error("❌ Polling xatosi:", error);
   });
 }
-
