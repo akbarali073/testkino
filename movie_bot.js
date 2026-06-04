@@ -17,12 +17,30 @@ const USER_FILE = path.join(__dirname, "users.json");
 if (!fs.existsSync(KINO_FILE)) fs.writeFileSync(KINO_FILE, JSON.stringify({}));
 if (!fs.existsSync(USER_FILE)) fs.writeFileSync(USER_FILE, JSON.stringify({}));
 
-// Ma'lumotlarni fayldan o'qish funksiyalari
-const getKinolar = () => JSON.parse(fs.readFileSync(KINO_FILE, "utf8"));
+// Ma'lumotlarni fayldan XAVFSIZ o'qish funksiyalari (Tuzatilgan qismi)
+const getKinolar = () => {
+  try {
+    const content = fs.readFileSync(KINO_FILE, "utf8");
+    return content ? JSON.parse(content) : {};
+  } catch (error) {
+    fs.writeFileSync(KINO_FILE, JSON.stringify({}));
+    return {};
+  }
+};
+
 const saveKinolar = (data) =>
   fs.writeFileSync(KINO_FILE, JSON.stringify(data, null, 2));
 
-const getUsers = () => JSON.parse(fs.readFileSync(USER_FILE, "utf8"));
+const getUsers = () => {
+  try {
+    const content = fs.readFileSync(USER_FILE, "utf8");
+    return content ? JSON.parse(content) : {};
+  } catch (error) {
+    fs.writeFileSync(USER_FILE, JSON.stringify({}));
+    return {};
+  }
+};
+
 const saveUsers = (data) =>
   fs.writeFileSync(USER_FILE, JSON.stringify(data, null, 2));
 
@@ -128,7 +146,7 @@ bot.on("message", async (ctx) => {
         messageId: state.messageId,
         chatId: state.fromChatId,
       };
-      saveKinolar(kinolar);
+      savePush = saveKinolar(kinolar);
 
       delete adminStates[userId];
       return ctx.reply(
