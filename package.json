@@ -1,0 +1,22 @@
+{
+  "name": "movie-bot",
+  "version": "1.0.0",
+  "description": "Telegram Movie Bot - Kino kodiga asoslangan bot",
+  "main": "movie_bot.js",
+  "scripts": {
+    "start": "node movie_bot.js",
+    "dev": "node movie_bot.js"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "movie"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.0.0",
+    "node-telegram-bot-api": "^0.64.0",
+    "telegraf": "^4.16.3"
+  }
+}
