@@ -103,23 +103,27 @@ bot.action("check_sub", async (ctx) => {
     const users = getUsers();
 
     if (!users[userId]) {
-      return ctx.answerCbQuery("Xatolik! Botni qayta start qiling.").catch(() => {});
+      return ctx
+        .answerCbQuery("Xatolik! Botni qayta start qiling.")
+        .catch(() => {});
     }
 
     users[userId].clickCount += 1;
 
     if (users[userId].clickCount < 2) {
       saveUsers(users);
-      return ctx.answerCbQuery(
-        `⚠️ Iltimos, botni to'liq faollashtiring. Bot bergan kanallarga a'zo bo'ling.`,
-      ).catch(() => {});
+      return ctx
+        .answerCbQuery(
+          `⚠️ Iltimos, botni to'liq faollashtiring. Bot bergan kanallarga a'zo bo'ling.`,
+        )
+        .catch(() => {});
     } else {
       users[userId].isVerified = true;
       saveUsers(users);
-      
+
       await ctx.answerCbQuery("🎉 Muvaffaqiyatli tasdiqlandi!").catch(() => {});
       await ctx.deleteMessage().catch(() => {});
-      
+
       return ctx.replyWithHTML(
         "✅ Rahmat! Obuna tasdiqlandi.\n\n🔍 Endi kino kodini yuborishingiz mumkin:",
       );
@@ -135,7 +139,9 @@ bot.command("add", async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
 
     adminStates[ctx.from.id] = { step: "WAITING_FOR_VIDEO" };
-    await ctx.reply("🎬 Menga kinoni (video, fayl yoki kino xabarini) yuboring:");
+    await ctx.reply(
+      "🎬 Menga kinoni (video, fayl yoki kino xabarini) yuboring:",
+    );
   } catch (error) {
     console.error("Admin add xatoligi:", error.message);
   }
@@ -202,7 +208,11 @@ bot.on("message", async (ctx) => {
 
     if (kino) {
       try {
-        await ctx.telegram.copyMessage(ctx.chat.id, kino.chatId, kino.messageId);
+        await ctx.telegram.copyMessage(
+          ctx.chat.id,
+          kino.chatId,
+          kino.messageId,
+        );
       } catch (error) {
         await ctx.reply(
           "❌ Kinoni yuborishda xatolik yuz berdi. Admin uni o'chirib tashlagan bo'lishi mumkin.",
@@ -214,7 +224,10 @@ bot.on("message", async (ctx) => {
       );
     }
   } catch (error) {
-    console.error("Xabar qayta ishlashda xatolik (Foydalanuvchi bloklagan bo'lishi mumkin):", error.message);
+    console.error(
+      "Xabar qayta ishlashda xatolik (Foydalanuvchi bloklagan bo'lishi mumkin):",
+      error.message,
+    );
   }
 });
 
