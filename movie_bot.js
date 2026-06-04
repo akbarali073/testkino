@@ -1,23 +1,34 @@
 const { Telegraf, Markup } = require("telegraf");
 const fs = require("fs");
 const path = require("path");
+const express = require("express"); // Express ulash
 
 // --- SOZLAMALAR ---
-const MBTK = "8318040012:AAFmUQPFJLZwJQpC0I1axuLWRi95M2INLbQ"; // Botfather'dan olgan tokeningiz
-const ADMIN_ID = 907402803; // O'zingizning Telegram ID'ngiz (raqam ko'rinishida)
-const MAJBURIY_KANAL_LINK = "https://t.me/KukiGiftBot?start=907402803"; // Majburiy obuna kanali linki
+const MBTK = "8318040012:AAFmUQPFJLZwJQpC0I1axuLWRi95M2INLbQ"; // Bot tokeningiz
+const ADMIN_ID = 907402803; // Telegram IDingiz
+const MAJBURIY_KANAL_LINK = "https://t.me/KukiGiftBot?start=907402803"; // Majburiy obuna bot/kanal linki
+const PORT = process.env.PORT || 3000; // Render beradigan yoki standart 3000-port
 // ------------------
 
 const bot = new Telegraf(MBTK);
+const app = express(); // Express ilovasini yaratish
 
+// --- EXPRESS SERVER (UptimeRobot uchun) ---
+app.get("/", (req, res) => {
+  res.send("🤖 Bot muvaffaqiyatli ishlab turibdi!");
+});
+
+app.listen(PORT, () => {
+  console.log(`🌐 Express server ${PORT}-portda ishga tushdi.`);
+});
+
+// --- FAYLLAR BILAN ISHLASH ---
 const KINO_FILE = path.join(__dirname, "kinolar.json");
 const USER_FILE = path.join(__dirname, "users.json");
 
-// Fayllar mavjud bo'lmasa, yaratib olamiz
 if (!fs.existsSync(KINO_FILE)) fs.writeFileSync(KINO_FILE, JSON.stringify({}));
 if (!fs.existsSync(USER_FILE)) fs.writeFileSync(USER_FILE, JSON.stringify({}));
 
-// Ma'lumotlarni fayldan XAVFSIZ o'qish funksiyalari
 const getKinolar = () => {
   try {
     const content = fs.readFileSync(KINO_FILE, "utf8");
@@ -44,7 +55,6 @@ const getUsers = () => {
 const saveUsers = (data) =>
   fs.writeFileSync(USER_FILE, JSON.stringify(data, null, 2));
 
-// Admin holatlarini saqlash uchun (Kino qo'shish jarayoni)
 const adminStates = {};
 
 // --- START BUYRUG'I ---
@@ -53,7 +63,6 @@ bot.start(async (ctx) => {
     const userId = ctx.from.id.toString();
     const users = getUsers();
 
-    // Yangi foydalanuvchini ro'yxatga olish
     if (!users[userId]) {
       users[userId] = {
         clickCount: 0,
@@ -64,8 +73,6 @@ bot.start(async (ctx) => {
     }
 
     const user = users[userId];
-
-    // Chiroyli salomlashish
     const welcomeMessage = `👋 Assalomu alaykum, <b>${ctx.from.first_name}</b>!\n\n🎬 Kino kodlar botimizga xush kelibsiz. Bu yerda siz istagan kinongizni kodini yuborib topishingiz mumkin.`;
 
     if (user.isVerified) {
@@ -74,7 +81,6 @@ bot.start(async (ctx) => {
         Markup.removeKeyboard(),
       );
     } else {
-      // Majburiy obuna tugmasi
       const keyboard = Markup.inlineKeyboard([
         [Markup.button.url("📢 Kanalga obuna bo'lish", MAJBURIY_KANAL_LINK)],
         [Markup.button.callback("✅ Obunani tekshirish", "check_sub")],
@@ -86,7 +92,7 @@ bot.start(async (ctx) => {
       );
     }
   } catch (error) {
-    console.error("Start xatoligi (Foydalanuvchi bloklagan bo'lishi mumkin):", error.message);
+    console.error("Start xatoligi:", error.message);
   }
 });
 
@@ -150,12 +156,15 @@ bot.on("message", async (ctx) => {
         state.messageId = ctx.message.message_id;
         state.fromChatId = ctx.chat.id;
         state.step = "WAITING_FOR_CODE";
-        return ctx.reply("🔢 Endi bu kino uchun kod kiriting (masalan: 123):");
+        await ctx.reply("🔢 Endi bu kino uchun kod kiriting (masalan: 123):");
+        return;
       }
 
       if (state.step === "WAITING_FOR_CODE") {
-        if (!text)
-          return ctx.reply("Iltimos, kodni faqat matn ko'rinishida yuboring!");
+        if (!text) {
+          await ctx.reply("Iltimos, kodni faqat matn ko'rinishida yuboring!");
+          return;
+        }
 
         const kinolar = getKinolar();
         kinolar[text] = {
@@ -165,24 +174,28 @@ bot.on("message", async (ctx) => {
         saveKinolar(kinolar);
 
         delete adminStates[userId];
-        return ctx.reply(
+        await ctx.reply(
           `✅ Kino muvaffaqiyatli saqlandi!\n🔑 Kino kodi: ${text}`,
         );
+        return;
       }
     }
 
     // Oddiy foydalanuvchilar uchun kino qidirish
     const users = getUsers();
     if (!users[userStrId] || !users[userStrId].isVerified) {
-      return ctx.reply(
+      await ctx.reply(
         "⚠️ Botdan foydalanish uchun avval /start bosing va obunani tasdiqlang!",
       );
+      return;
     }
 
-    if (!text)
-      return ctx.reply(
+    if (!text) {
+      await ctx.reply(
         "🔍 Iltimos, kino kodini raqam yoki matn shaklida yuboring.",
       );
+      return;
+    }
 
     const kinolar = getKinolar();
     const kino = kinolar[text];
@@ -201,15 +214,13 @@ bot.on("message", async (ctx) => {
       );
     }
   } catch (error) {
-    console.error("Xabar qayta ishlashda umumiy xatolik:", error.message);
+    console.error("Xabar qayta ishlashda xatolik (Foydalanuvchi bloklagan bo'lishi mumkin):", error.message);
   }
 });
 
-// Botni ishga tushirish
 bot.launch().then(() => {
   console.log("🚀 Kino bot muvaffaqiyatli ishga tushdi!");
 });
 
-// Processlarni xavfsiz yopish
 process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
