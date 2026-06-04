@@ -17,7 +17,7 @@ const USER_FILE = path.join(__dirname, "users.json");
 if (!fs.existsSync(KINO_FILE)) fs.writeFileSync(KINO_FILE, JSON.stringify({}));
 if (!fs.existsSync(USER_FILE)) fs.writeFileSync(USER_FILE, JSON.stringify({}));
 
-// Ma'lumotlarni fayldan XAVFSIZ o'qish funksiyalari (Tuzatilgan qismi)
+// Ma'lumotlarni fayldan XAVFSIZ o'qish funksiyalari
 const getKinolar = () => {
   try {
     const content = fs.readFileSync(KINO_FILE, "utf8");
@@ -48,142 +48,160 @@ const saveUsers = (data) =>
 const adminStates = {};
 
 // --- START BUYRUG'I ---
-bot.start((ctx) => {
-  const userId = ctx.from.id.toString();
-  const users = getUsers();
+bot.start(async (ctx) => {
+  try {
+    const userId = ctx.from.id.toString();
+    const users = getUsers();
 
-  // Yangi foydalanuvchini ro'yxatga olish
-  if (!users[userId]) {
-    users[userId] = {
-      clickCount: 0,
-      isVerified: false,
-      username: ctx.from.username || "",
-    };
-    saveUsers(users);
-  }
+    // Yangi foydalanuvchini ro'yxatga olish
+    if (!users[userId]) {
+      users[userId] = {
+        clickCount: 0,
+        isVerified: false,
+        username: ctx.from.username || "",
+      };
+      saveUsers(users);
+    }
 
-  const user = users[userId];
+    const user = users[userId];
 
-  // Chiroyli salomlashish
-  const welcomeMessage = `👋 Assalomu alaykum, <b>${ctx.from.first_name}</b>!\n\n🎬 Kino kodlar botimizga xush kelibsiz. Bu yerda siz istagan kinongizni kodini yuborib topishingiz mumkin.`;
+    // Chiroyli salomlashish
+    const welcomeMessage = `👋 Assalomu alaykum, <b>${ctx.from.first_name}</b>!\n\n🎬 Kino kodlar botimizga xush kelibsiz. Bu yerda siz istagan kinongizni kodini yuborib topishingiz mumkin.`;
 
-  if (user.isVerified) {
-    ctx.replyWithHTML(
-      `${welcomeMessage}\n\n🔍 Kino kodini yuboring:`,
-      Markup.removeKeyboard(),
-    );
-  } else {
-    // Majburiy obuna tugmasi
-    const keyboard = Markup.inlineKeyboard([
-      [Markup.button.url("📢 Kanalga obuna bo'lish", MAJBURIY_KANAL_LINK)],
-      [Markup.button.callback("✅ Obunani tekshirish", "check_sub")],
-    ]);
+    if (user.isVerified) {
+      await ctx.replyWithHTML(
+        `${welcomeMessage}\n\n🔍 Kino kodini yuboring:`,
+        Markup.removeKeyboard(),
+      );
+    } else {
+      // Majburiy obuna tugmasi
+      const keyboard = Markup.inlineKeyboard([
+        [Markup.button.url("📢 Kanalga obuna bo'lish", MAJBURIY_KANAL_LINK)],
+        [Markup.button.callback("✅ Obunani tekshirish", "check_sub")],
+      ]);
 
-    ctx.replyWithHTML(
-      `${welcomeMessage}\n\n⚠️ Botdan foydalanish uchun pastdagi botga kirib uni faollashtring!`,
-      keyboard,
-    );
+      await ctx.replyWithHTML(
+        `${welcomeMessage}\n\n⚠️ Botdan foydalanish uchun pastdagi botga kirib uni faollashtring!`,
+        keyboard,
+      );
+    }
+  } catch (error) {
+    console.error("Start xatoligi (Foydalanuvchi bloklagan bo'lishi mumkin):", error.message);
   }
 });
 
 // --- OBUNANI TASDIQLASH (CALLBACK) ---
-bot.action("check_sub", (ctx) => {
-  const userId = ctx.from.id.toString();
-  const users = getUsers();
+bot.action("check_sub", async (ctx) => {
+  try {
+    const userId = ctx.from.id.toString();
+    const users = getUsers();
 
-  if (!users[userId])
-    return ctx.answerCbQuery("Xatolik! Botni qayta start qiling.");
+    if (!users[userId]) {
+      return ctx.answerCbQuery("Xatolik! Botni qayta start qiling.").catch(() => {});
+    }
 
-  users[userId].clickCount += 1;
+    users[userId].clickCount += 1;
 
-  if (users[userId].clickCount < 2) {
-    saveUsers(users);
-    return ctx.answerCbQuery(
-      `⚠️ Iltimos, botni to'liq faollashtiring. Bot bergan kanallarga a'zo bo'ling.`,
-    );
-  } else {
-    users[userId].isVerified = true;
-    saveUsers(users);
-    ctx.answerCbQuery("🎉 Muvaffaqiyatli tasdiqlandi!");
-    ctx.deleteMessage().catch(() => {});
-    return ctx.replyWithHTML(
-      "✅ Rahmat! Obuna tasdiqlandi.\n\n🔍 Endi kino kodini yuborishingiz mumkin:",
-    );
+    if (users[userId].clickCount < 2) {
+      saveUsers(users);
+      return ctx.answerCbQuery(
+        `⚠️ Iltimos, botni to'liq faollashtiring. Bot bergan kanallarga a'zo bo'ling.`,
+      ).catch(() => {});
+    } else {
+      users[userId].isVerified = true;
+      saveUsers(users);
+      
+      await ctx.answerCbQuery("🎉 Muvaffaqiyatli tasdiqlandi!").catch(() => {});
+      await ctx.deleteMessage().catch(() => {});
+      
+      return ctx.replyWithHTML(
+        "✅ Rahmat! Obuna tasdiqlandi.\n\n🔍 Endi kino kodini yuborishingiz mumkin:",
+      );
+    }
+  } catch (error) {
+    console.error("Callback xatoligi:", error.message);
   }
 });
 
 // --- ADMIN PANEL (KINO QO'SHISH) ---
-bot.command("add", (ctx) => {
-  if (ctx.from.id !== ADMIN_ID) return;
+bot.command("add", async (ctx) => {
+  try {
+    if (ctx.from.id !== ADMIN_ID) return;
 
-  adminStates[ctx.from.id] = { step: "WAITING_FOR_VIDEO" };
-  ctx.reply("🎬 Menga kinoni (video, fayl yoki kino xabarini) yuboring:");
+    adminStates[ctx.from.id] = { step: "WAITING_FOR_VIDEO" };
+    await ctx.reply("🎬 Menga kinoni (video, fayl yoki kino xabarini) yuboring:");
+  } catch (error) {
+    console.error("Admin add xatoligi:", error.message);
+  }
 });
 
 // --- XABARLARNI QABUL QILISH ---
 bot.on("message", async (ctx) => {
-  const userId = ctx.from.id;
-  const userStrId = userId.toString();
-  const text = ctx.message.text;
+  try {
+    const userId = ctx.from.id;
+    const userStrId = userId.toString();
+    const text = ctx.message.text;
 
-  // Admin kino qo'shish jarayoni
-  if (userId === ADMIN_ID && adminStates[userId]) {
-    const state = adminStates[userId];
+    // Admin kino qo'shish jarayoni
+    if (userId === ADMIN_ID && adminStates[userId]) {
+      const state = adminStates[userId];
 
-    if (state.step === "WAITING_FOR_VIDEO") {
-      state.messageId = ctx.message.message_id;
-      state.fromChatId = ctx.chat.id;
-      state.step = "WAITING_FOR_CODE";
-      return ctx.reply("🔢 Endi bu kino uchun kod kiriting (masalan: 123):");
+      if (state.step === "WAITING_FOR_VIDEO") {
+        state.messageId = ctx.message.message_id;
+        state.fromChatId = ctx.chat.id;
+        state.step = "WAITING_FOR_CODE";
+        return ctx.reply("🔢 Endi bu kino uchun kod kiriting (masalan: 123):");
+      }
+
+      if (state.step === "WAITING_FOR_CODE") {
+        if (!text)
+          return ctx.reply("Iltimos, kodni faqat matn ko'rinishida yuboring!");
+
+        const kinolar = getKinolar();
+        kinolar[text] = {
+          messageId: state.messageId,
+          chatId: state.fromChatId,
+        };
+        saveKinolar(kinolar);
+
+        delete adminStates[userId];
+        return ctx.reply(
+          `✅ Kino muvaffaqiyatli saqlandi!\n🔑 Kino kodi: ${text}`,
+        );
+      }
     }
 
-    if (state.step === "WAITING_FOR_CODE") {
-      if (!text)
-        return ctx.reply("Iltimos, kodni faqat matn ko'rinishida yuboring!");
-
-      const kinolar = getKinolar();
-      kinolar[text] = {
-        messageId: state.messageId,
-        chatId: state.fromChatId,
-      };
-      savePush = saveKinolar(kinolar);
-
-      delete adminStates[userId];
+    // Oddiy foydalanuvchilar uchun kino qidirish
+    const users = getUsers();
+    if (!users[userStrId] || !users[userStrId].isVerified) {
       return ctx.reply(
-        `✅ Kino muvaffaqiyatli saqlandi!\n🔑 Kino kodi: ${text}`,
+        "⚠️ Botdan foydalanish uchun avval /start bosing va obunani tasdiqlang!",
       );
     }
-  }
 
-  // Oddiy foydalanuvchilar uchun kino qidirish
-  const users = getUsers();
-  if (!users[userStrId] || !users[userStrId].isVerified) {
-    return ctx.reply(
-      "⚠️ Botdan foydalanish uchun avval /start bosing va obunani tasdiqlang!",
-    );
-  }
+    if (!text)
+      return ctx.reply(
+        "🔍 Iltimos, kino kodini raqam yoki matn shaklida yuboring.",
+      );
 
-  if (!text)
-    return ctx.reply(
-      "🔍 Iltimos, kino kodini raqam yoki matn shaklida yuboring.",
-    );
+    const kinolar = getKinolar();
+    const kino = kinolar[text];
 
-  const kinolar = getKinolar();
-  const kino = kinolar[text];
-
-  if (kino) {
-    try {
-      // Kinoni admin qanday yuborgan bo'lsa, xuddi shunday copy qilib foydalanuvchiga uzatadi
-      await ctx.telegram.copyMessage(ctx.chat.id, kino.chatId, kino.messageId);
-    } catch (error) {
-      ctx.reply(
-        "❌ Kinoni yuborishda xatolik yuz berdi. Admin uni o'chirib tashlagan bo'lishi mumkin.",
+    if (kino) {
+      try {
+        await ctx.telegram.copyMessage(ctx.chat.id, kino.chatId, kino.messageId);
+      } catch (error) {
+        await ctx.reply(
+          "❌ Kinoni yuborishda xatolik yuz berdi. Admin uni o'chirib tashlagan bo'lishi mumkin.",
+        );
+      }
+    } else {
+      await ctx.reply(
+        "😔 Afsuski, bunday kodli kino topilmadi. Kodni to'g'ri kiritganingizni tekshiring.",
       );
     }
-  } else {
-    ctx.reply(
-      "😔 Afsuski, bunday kodli kino topilmadi. Kodni to'g'ri kiritganingizni tekshiring.",
-    );
+  } catch (error) {
+    console.error("Xabar qayta ishlashda umumiy xatolik:", error.message);
   }
 });
 
